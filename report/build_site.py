@@ -27,7 +27,7 @@ from html import unescape as html_module_unescape
 
 from analysis.market_calendar import next_business_day
 from report.forecast_set import ForecastSet, evening_set, fmt_md_hm, to_json_dict
-from report.intraday_report import BASIS, RULE, ParsedIntraday, ParsedPick, parse_intraday_report
+from report.intraday_report import BASIS, RULE, TITLE, ParsedIntraday, ParsedPick, parse_intraday_report
 from report.glossary import terms_in
 from report.pnl_calendar import CAL_SCRIPT, CAL_STYLE, render_calendar
 from tracking.session_stats import load_session_stats
@@ -87,6 +87,15 @@ _FSET_SCRIPT = r"""
       h.classList.add('is-' + r.k);
       last[s.id] = r.k;
     });
+    var elist = document.getElementById('expired-list'), ebox = document.getElementById('expired-sets');
+    if (elist) {
+      document.querySelectorAll('.fset-block').forEach(function (blk) {
+        if (last[blk.getAttribute('data-set-id')] === 'expired' && !elist.contains(blk)) elist.appendChild(blk);
+      });
+      if (ebox) ebox.hidden = !elist.querySelector('.fset-block');
+    }
+    var flist = document.getElementById('forecast-list'), noact = document.getElementById('no-active');
+    if (flist && noact) noact.hidden = !!flist.querySelector('.fset-block');
     document.querySelectorAll('.fset-body').forEach(function (d) {
       var k = last[d.getAttribute('data-id')];
       if (!k) return;
@@ -117,7 +126,7 @@ _FSET_SCRIPT = r"""
       cls = 'is-waiting';
     } else {
       chip = '⚪ 今使える予想はありません';
-      msg = '<b>現在、有効な予想はありません。</b>下の予想は期限切れです（前日夜の予想は前場向けで、後場の売買には使えません）。'
+      msg = '<b>現在、有効な予想はありません。</b>期限切れの予想は「結果・成績」タブに移しています（前日夜の予想は前場向けで、後場の売買には使えません）。'
         + '昼の予想は 11:50 ごろ、夜の予想は 16:10 ごろに更新されます。';
       cls = 'is-none';
     }
@@ -156,6 +165,7 @@ _FSET_SCRIPT = r"""
       + '<div class="nb-chip">' + chip + '</div>' + timeline
       + '<div class="nb-more"><p class="nb-msg">' + msg + '</p>' + list + alerts + '</div>'
       + '<div class="nb-hint">' + (bannerOpen ? 'タップで閉じる' : 'タップで詳細') + '</div>';
+    document.documentElement.style.setProperty('--banner-h', banner.offsetHeight + 'px');
   }
   update();
   setInterval(update, 30000);
@@ -491,6 +501,20 @@ details.day-row > .report { padding: 14px; background: var(--bg); border-top: 1p
 }
 """
 _STYLE += CAL_STYLE
+
+_STYLE += """
+.tabs { position: sticky; top: var(--banner-h, 0px); z-index: 25; display: flex; gap: 6px; margin: 0 0 12px; padding: 6px; background: var(--bg); border-radius: 14px; }
+.tabs .tab { flex: 1; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); border-radius: 10px; padding: 10px 6px; font-size: 0.92rem; font-weight: 800; cursor: pointer; }
+.tabs .tab.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.js .tab-panel { display: none; } .js .tab-panel.active { display: block; }
+.tab-lead { margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); font-size: 0.8rem; color: var(--text-muted); line-height: 1.55; }
+.tab-lead b { color: var(--alert); }
+.no-active { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--border); background: var(--stale-bg); font-size: 0.85rem; line-height: 1.6; }
+.res-section { margin: 0 0 18px; }
+.res-intraday { margin: 0 0 12px; }
+.res-intraday-title { font-size: 0.95rem; margin: 6px 0 2px; color: var(--ink); }
+.expired-sets .fset-block { opacity: 0.85; }
+"""
 
 
 _PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
@@ -960,25 +984,31 @@ def _side_section(
     anchor: bool = False,
     missed: list[ParsedMiss] | None = None,
     previous: ParsedPrevious | None = None,
+    part: str = "all",
 ) -> str:
-    sub = f"TOP{len(candidates)}" if candidates else ""
+    """part: "all"（履歴の日別表示）/ "forecast"（今日の予想タブ: 候補だけ）/ "results"（結果・成績タブ: 前営業日の結果・成績・履歴）。"""
+    sub = f"TOP{len(candidates)}" if candidates and part != "results" else ""
     sub_html = f'<span class="side-sub">{sub}</span>' if sub else ""
     # 各ブロックを固定スロットに入れ、買い/売りで行位置を揃える（空でもスロットは常に6個）
-    parts = [f'<div class="side-head"><h2 class="side-title">{heading}</h2>{sub_html}</div>']
-    parts.append(_previous_block(previous))
-    parts.append(_stat_row(stats_lines) if stats_lines else "")
-    parts.append(_unfilled_block(unfilled or []))
-    parts.append(_miss_block(missed or []))
-    if candidates:
-        cards = "".join(_candidate_card(c, side) for c in candidates)
-        parts.append(f'<div class="card-grid">{cards}</div>')
-    else:
-        parts.append('<p class="empty-msg">本日は基準を満たす候補がありませんでした。</p>')
+    title = heading if part != "results" else heading.replace("候補", "の結果・成績")
+    parts = [f'<div class="side-head"><h2 class="side-title">{title}</h2>{sub_html}</div>']
+    if part in ("all", "results"):
+        parts.append(_previous_block(previous))
+        parts.append(_stat_row(stats_lines) if stats_lines else "")
+        parts.append(_unfilled_block(unfilled or []))
+        parts.append(_miss_block(missed or []))
+    has_cards = part in ("all", "forecast")
+    if has_cards:
+        if candidates:
+            cards = "".join(_candidate_card(c, side) for c in candidates)
+            parts.append(f'<div class="card-grid">{cards}</div>')
+        else:
+            parts.append('<p class="empty-msg">本日は基準を満たす候補がありませんでした。</p>')
     slots = "".join(
-        f'<div class="slot{" cards" if i == len(parts) - 1 else ""}">{p}</div>' for i, p in enumerate(parts)
+        f'<div class="slot{" cards" if has_cards and i == len(parts) - 1 else ""}">{p}</div>' for i, p in enumerate(parts)
     )
-    id_attr = f' id="side-{side}"' if anchor else ""
-    return f'<section class="side paired {side}"{id_attr}>{slots}</section>'
+    id_attr = f' id="side-{side}"' if anchor and part != "results" else (f' id="res-{side}"' if anchor else "")
+    return f'<section class="side paired {side} part-{part}"{id_attr}>{slots}</section>'
 
 
 def _experiment_block(parsed: ParsedReport) -> str:
@@ -1005,22 +1035,27 @@ def _experiment_block(parsed: ParsedReport) -> str:
     )
 
 
-def _render_report(parsed: ParsedReport, latest: bool = False, fset: ForecastSet | None = None, set_id: str = "") -> str:
+def _render_report(
+    parsed: ParsedReport, latest: bool = False, fset: ForecastSet | None = None, set_id: str = "", part: str = "all"
+) -> str:
+    """part="forecast": 候補だけ（予想セットの見出し付き）/ "results": 前営業日の結果・成績・履歴だけ / "all": 履歴の日別表示。"""
     sections = _side_section(
         "買い候補", "buy", parsed.buy_stats_lines, parsed.buy_candidates, parsed.buy_unfilled, latest, parsed.buy_missed,
-        parsed.buy_previous,
+        parsed.buy_previous, part,
     )
     nav = ""
     if parsed.has_sell_section:
         sections += _side_section(
             "売り候補", "sell", parsed.sell_stats_lines, parsed.sell_candidates, parsed.sell_unfilled, latest, parsed.sell_missed,
-            parsed.sell_previous,
+            parsed.sell_previous, part,
         )
-        if latest:
+        if latest and part != "results":
             nav = (
                 '<nav class="seg-nav"><a class="buy" href="#side-buy">買い候補</a>'
                 '<a class="sell" href="#side-sell">売り候補</a></nav>'
             )
+    if part == "results":
+        return f'<div class="sides">{sections}</div>'
     inner = f'<div class="sides">{sections}</div>{_experiment_block(parsed)}'
     if fset is None:
         return f"{nav}{inner}"
@@ -1098,24 +1133,33 @@ def _ipick_card(p: ParsedPick, side: str) -> str:
     )
 
 
-def _intraday_block(ir: ParsedIntraday, fset: ForecastSet, set_id: str) -> str:
-    """寄り枠・昼の予想。最新の予想セットとして、夜の予想の上に置く。期限切れは画面側で自動的に折りたたむ。"""
+def _intraday_block(ir: ParsedIntraday, fset: ForecastSet, set_id: str, part: str = "forecast") -> str:
+    """寄り枠・昼の予想。part="forecast": 候補（予想セットの見出し付き。期限切れは画面側で結果タブへ移す）/ "results": 枠の成績だけ。"""
     cols = []
     for label, side, stats, picks, extra in (
         ("買い", "buy", ir.buy_stats_lines, ir.buy_picks, ir.buy_extra),
         ("売り", "sell", ir.sell_stats_lines, ir.sell_picks, ir.sell_extra),
     ):
-        body = _stat_row(stats) if stats else ""
-        body += "".join(_ipick_card(p, side) for p in picks) or '<p class="empty-msg">該当する候補がありませんでした。</p>'
+        if part == "results":
+            body = _stat_row(stats) if stats else '<p class="empty-msg">成績はまだありません。</p>'
+            cols.append(f'<section class="exp-col {side}"><h3 class="exp-col-title">{label}</h3>{body}</section>')
+            continue
+        body = "".join(_ipick_card(p, side) for p in picks) or '<p class="empty-msg">該当する候補がありませんでした。</p>'
         if extra:
             body += f'<p class="ipick-extra">ほか{extra}件（動きの大きい順に表示）</p>'
         cols.append(f'<section class="exp-col {side}"><h3 class="exp-col-title">{label}候補</h3>{body}</section>')
+    if part == "results":
+        return (
+            f'<div class="res-intraday"><h3 class="res-intraday-title">{html.escape(TITLE[ir.slot])}の成績（試験運用）</h3>'
+            f'<p class="uf-help">{html.escape(BASIS[ir.slot])}から大引けまでに予想方向へ動いたか（同値は外れ）で判定。本番の成績・仮想資金には含めません。</p>'
+            f'<div class="exp-sides">{"".join(cols)}</div></div>'
+        )
     intro = (
         f'<p class="uf-help">試験運用・効果は未確認。{html.escape(RULE[ir.slot])}。'
         f"的中は、{html.escape(BASIS[ir.slot])}から大引けまでに予想方向へ動いたか（同値は外れ）で判定し、本番の成績・仮想資金には含めません。</p>"
     )
     return (
-        f'<div class="report intraday">{_fset_header(fset, set_id)}'
+        f'<div class="report intraday fset-block" data-set-id="{html.escape(set_id)}">{_fset_header(fset, set_id)}'
         f'<details class="fset-body" data-id="{html.escape(set_id)}" open>'
         f"<summary>候補一覧（期限切れのときは折りたたまれます。タップで開閉）</summary>{intro}"
         f'<div class="exp-sides">{"".join(cols)}</div></details></div>'
@@ -1154,6 +1198,26 @@ def _session_block(stats: dict | None) -> str:
         "件数が少ないうちは、差が偶然の範囲のことがあります。</p></section>"
     )
 
+
+TAB_SCRIPT = r"""
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs .tab'));
+  var panels = Array.prototype.slice.call(document.querySelectorAll('.tab-panel'));
+  if (!tabs.length) return;
+  function show(name) {
+    tabs.forEach(function (t) { var on = t.dataset.tab === name; t.classList.toggle('active', on); t.setAttribute('aria-selected', on ? 'true' : 'false'); });
+    panels.forEach(function (p) { p.classList.toggle('active', p.dataset.tab === name); });
+    try { sessionStorage.setItem('tab', name); } catch (e) {}
+  }
+  tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.tab); window.scrollTo(0, 0); }); });
+  var start = 'forecast';
+  try { start = sessionStorage.getItem('tab') || 'forecast'; } catch (e) {}
+  var h = (location.hash || '').replace('#', '');
+  if (h === 'results' || h === 'pnl' || h === 'forecast') start = h;
+  if (!tabs.some(function (t) { return t.dataset.tab === start; })) start = 'forecast';
+  show(start);
+})();
+"""
 
 HOWTO_HTML = """<details class="howto"><summary>スコアと成績の見方</summary>
 <h3>スコアとは</h3>
@@ -1219,7 +1283,6 @@ def build_index(
             parsed_by_path[path] = parsed
     report_files = list(parsed_by_path)
 
-    latest_html = ""
     premarket = load_premarket(reports_dir / "premarket.json")
     latest_date = None
     if report_files:
@@ -1233,21 +1296,28 @@ def build_index(
     history_by_month: dict[str, list[str]] = defaultdict(list)
     page_sets: list[tuple[str, ForecastSet]] = []
 
+    latest_forecast = ""
+    latest_results = ""
     for i, path in enumerate(report_files):
         parsed = parsed_by_path[path]
         fset = parsed.forecast_set or _derive_set(path.stem)
         set_id = f"{path.stem}-{fset.slot}" if fset else ""
-        body = _render_report(parsed, latest=(i == 0), fset=fset, set_id=set_id)
-        if i == 0 and fset:
-            page_sets.append((set_id, fset))
         if i == 0:
-            latest_html = f'<div class="report latest">{body}</div>'
+            if fset:
+                page_sets.append((set_id, fset))
+            # 最新の夜の予想: 候補は「今日の予想」タブ、前営業日の結果・成績は「結果・成績」タブに分ける（2026-11-24）
+            latest_forecast = (
+                f'<div class="report latest fset-block" data-set-id="{html.escape(set_id)}">'
+                f'{_render_report(parsed, latest=True, fset=fset, set_id=set_id, part="forecast")}</div>'
+            )
+            latest_results = _render_report(parsed, latest=True, fset=fset, set_id=set_id, part="results")
         else:
-            year_month = path.stem[:7]
-            history_by_month[year_month].append(_day_row(path.stem, parsed, body))
+            body = _render_report(parsed, latest=False, fset=fset, set_id=set_id)
+            history_by_month[path.stem[:7]].append(_day_row(path.stem, parsed, body))
 
     # 寄り枠・昼の予想（日中の試験運用枠）。最新の夜のレポートの予測日以降のものを、夜の予想の上に置く
     intraday_blocks: list[tuple[str, str]] = []
+    intraday_results: dict[str, tuple[str, str]] = {}  # 区分 → (日付, 成績ブロック)。最新の日のものだけ
     if report_files:
         floor = report_files[0].stem
         for slot in ("open", "lunch"):
@@ -1262,11 +1332,12 @@ def build_index(
                 page_sets.append((sid, ir.forecast_set))
                 created = ir.forecast_set.created_at.isoformat() if ir.forecast_set.created_at else ir.forecast_set.valid_from.isoformat()
                 intraday_blocks.append((created, _intraday_block(ir, ir.forecast_set, sid)))
+                if slot not in intraday_results or day > intraday_results[slot][0]:
+                    intraday_results[slot] = (day, _intraday_block(ir, ir.forecast_set, sid, part="results"))
         intraday_blocks.sort(key=lambda t: t[0], reverse=True)  # 作成が新しいものを上に
-        latest_html = "".join(b for _, b in intraday_blocks) + latest_html
-
+    forecast_html = "".join(b for _, b in intraday_blocks) + latest_forecast
     if not report_files:
-        latest_html = "<p>まだレポートが生成されていません。</p>"
+        forecast_html = "<p>まだレポートが生成されていません。</p>"
 
     history_section = "<p>履歴なし</p>"
     history_count = sum(len(v) for v in history_by_month.values())
@@ -1282,6 +1353,37 @@ def build_index(
             for ym in months
         )
         history_section = f'<nav class="month-tabs">{tabs}</nav>{panels}'
+
+    results_parts = [
+        '<section class="res-section"><h2 class="section-title">最新の予想の前営業日の結果・成績</h2>'
+        "<p class=\"uf-help\">夜の予想の、前営業日の結果と、累計の成績です。的中率の基準は始値→終値の方向です。</p>"
+        f"{latest_results}</section>"
+        if latest_results
+        else "",
+        (
+            '<section class="res-section"><h2 class="section-title">寄り枠・昼の予想の成績（試験運用）</h2>'
+            + "".join(v[1] for k, v in sorted(intraday_results.items(), key=lambda kv: ("open", "lunch").index(kv[0])))
+            + "</section>"
+            if intraday_results
+            else ""
+        ),
+        _fund_block(fund),
+        session_html,
+        HOWTO_HTML,
+        '<section class="res-section expired-sets" id="expired-sets" hidden><h2 class="section-title">期限切れの予想（参考・いま使えません）</h2>'
+        '<p class="uf-help">有効時間が過ぎた予想です。売買には使えません。結果の確認用に、ここへ移しています。</p>'
+        '<div id="expired-list"></div></section>',
+        f'<section class="res-section"><div class="history-head"><h2 class="section-title">過去のレポート</h2>'
+        f'<span class="count">{history_count}日分</span></div>{history_section}</section>',
+    ]
+    results_html = "".join(results_parts)
+    tabs_nav = (
+        '<nav class="tabs" role="tablist"><button type="button" class="tab active" role="tab" data-tab="forecast">今日の予想</button>'
+        '<button type="button" class="tab" role="tab" data-tab="results">結果・成績</button>'
+        + ('<button type="button" class="tab" role="tab" data-tab="pnl">損益</button>' if pnl_html else "")
+        + "</nav>"
+    )
+    pnl_panel = f'<div class="tab-panel" data-tab="pnl" id="tab-pnl">{pnl_html}</div>' if pnl_html else ""
 
     latest_pill = (
         f'<span class="pill">最新レポート<b>{html.escape(report_files[0].stem)}</b></span>'
@@ -1306,21 +1408,28 @@ def build_index(
 <p class="disclaimer">本ページは根拠付きスコアリングによる分析結果であり、翌日の値動きや勝率を保証するものではありません。実発注は行っていません（デモ検証フェーズ）。</p>
 </header>
 {_banner_html()}
-{pnl_html}
-{_fund_block(fund)}
+{tabs_nav}
+<div class="tab-panel active" data-tab="forecast" id="tab-forecast">
+<p class="tab-lead">いま使える予想だけを表示します。期限切れの予想は、自動で「結果・成績」タブに移ります。</p>
 {env_html}
-{session_html}
-{HOWTO_HTML}
-{latest_html}
-{_glossary_block(_fund_block(fund), env_html, latest_html)}
-<div class="history-head"><h2 class="section-title">過去のレポート</h2><span class="count">{history_count}日分</span></div>
-{history_section}
+<div id="forecast-list">{forecast_html}</div>
+<p id="no-active" class="no-active" hidden><b>いま使える予想はありません。</b>期限切れの予想と、過去の結果は「結果・成績」タブにあります。次の更新: 寄り枠 9:25ごろ・昼の予想 11:50ごろ・夜の予想 16:10ごろ（平日）。</p>
+</div>
+<div class="tab-panel" data-tab="results" id="tab-results">
+<p class="tab-lead">結果・成績の画面です。<b>ここに表示される銘柄は、過去の予想です。いまの売買には使えません。</b></p>
+{results_html}
+</div>
+{pnl_panel}
+{_glossary_block(_fund_block(fund), env_html, forecast_html, results_html)}
 {_fsets_json(page_sets)}
 <script>
 {_FSET_SCRIPT}
 </script>
 <script>
 {CAL_SCRIPT}
+</script>
+<script>
+{TAB_SCRIPT}
 </script>
 <script>
 (function () {{

@@ -86,8 +86,9 @@ def test_site_without_misses_has_no_block(tmp_path):
 
 def test_site_misses_are_separated_by_side(tmp_path):
     page = _site(tmp_path, buy_missed=[_miss()], sell_missed=[_miss(code="6841", name="横河電機", causes=["地合い上昇"], side="sell")])
-    buy_part = page.split('id="side-sell"')[0]
-    sell_part = page.split('id="side-sell"')[1]
+    # 結果・成績タブ（res-buy / res-sell）に、買い・売りが別々に載る（2026-11-24 タブ分離）
+    res = page.split('id="res-buy"')[1]
+    buy_part, sell_part = res.split('id="res-sell"')[0], res.split('id="res-sell"')[1]
     assert "三菱商事" in buy_part and "横河電機" not in buy_part
     assert "横河電機" in sell_part and "地合い上昇 1件" in sell_part
 

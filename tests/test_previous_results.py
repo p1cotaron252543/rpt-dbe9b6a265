@@ -166,15 +166,18 @@ def test_site_scoreboard_rows_and_order(tmp_path):
     assert '<div class="pr">+1.52%<small>指値 +1.52%（約定）</small></div>' in page
     assert '<div class="pr">+0.00%<small>指値 不成立</small></div>' in page   # 不成立でも始値→終値の結果で判定
     assert '<div class="pr">-<small></small></div>' in page                       # 未確定
-    # 各側の先頭（成績タイルより前）にある
-    buy_part = page.split('id="side-buy"')[1].split('id="side-sell"')[0]
-    assert buy_part.index('class="prev"') < buy_part.index('class="stat-row"') < buy_part.index('class="card-grid"')
+    # 結果・成績タブ: 各側の先頭（成績タイルより前）にある。候補カードは「今日の予想」タブにあり、ここには出ない
+    buy_part = page.split('id="res-buy"')[1].split('id="res-sell"')[0]
+    assert buy_part.index('class="prev"') < buy_part.index('class="stat-row"')
+    assert 'class="card-grid"' not in buy_part
+    fc = page.split('id="side-buy"')[1].split('id="side-sell"')[0]
+    assert 'class="card-grid"' in fc and 'class="prev"' not in fc
 
 
 def test_site_previous_is_per_side(tmp_path):
     page = _page(tmp_path)
-    buy_part = page.split('id="side-buy"')[1].split('id="side-sell"')[0]
-    sell_part = page.split('id="side-sell"')[1]
+    res = page.split('id="res-buy"')[1]
+    buy_part, sell_part = res.split('id="res-sell"')[0], res.split('id="res-sell"')[1]
     assert "三菱商事" in buy_part and "三菱商事" not in sell_part
     assert "nS（S）" in sell_part and "nS（S）" not in buy_part
 
