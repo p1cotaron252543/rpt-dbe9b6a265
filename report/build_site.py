@@ -1011,8 +1011,8 @@ def _side_section(
     return f'<section class="side paired {side} part-{part}"{id_attr}>{slots}</section>'
 
 
-def _experiment_block(parsed: ParsedReport) -> str:
-    """テスト枠（値動き重視・試験運用）。本番の直下に、折りたたみ（初期状態は閉じる）で置く。"""
+def _experiment_block(parsed: ParsedReport, part: str = "forecast") -> str:
+    """テスト枠（値動き重視・試験運用）。part="forecast": 候補だけ（本番の直下に折りたたみ）/ "results": 成績だけ（結果・成績タブ）。"""
     if not (parsed.exp_buy_candidates or parsed.exp_sell_candidates):
         return ""
     cols = []
@@ -1020,12 +1020,21 @@ def _experiment_block(parsed: ParsedReport) -> str:
         ("買い", "buy", parsed.exp_buy_stats_lines, parsed.exp_buy_candidates),
         ("売り", "sell", parsed.exp_sell_stats_lines, parsed.exp_sell_candidates),
     ):
-        body = _stat_row(stats) if stats else ""
+        if part == "results":
+            body = _stat_row(stats) if stats else '<p class="empty-msg">成績はまだありません。</p>'
+            cols.append(f'<section class="exp-col {side}"><h3 class="exp-col-title">{label}</h3>{body}</section>')
+            continue
         if cands:
-            body += f'<div class="card-grid">{"".join(_candidate_card(c, side) for c in cands)}</div>'
+            body = f'<div class="card-grid">{"".join(_candidate_card(c, side) for c in cands)}</div>'
         else:
-            body += '<p class="empty-msg">該当する候補がありませんでした。</p>'
+            body = '<p class="empty-msg">該当する候補がありませんでした。</p>'
         cols.append(f'<section class="exp-col {side}"><h3 class="exp-col-title">{label}候補</h3>{body}</section>')
+    if part == "results":
+        return (
+            '<div class="res-intraday"><h3 class="res-intraday-title">テスト枠（値動き重視）の成績（試験運用）</h3>'
+            '<p class="uf-help">本番の成績・仮想資金には含めず、別に記録しています。効果はまだ確認できていません。</p>'
+            f'<div class="exp-sides">{"".join(cols)}</div></div>'
+        )
     return (
         '<details class="experiment"><summary><span>テスト枠（値動き重視）</span>'
         '<span class="exp-badge">試験運用・効果は未確認</span></summary>'
@@ -1055,7 +1064,7 @@ def _render_report(
                 '<a class="sell" href="#side-sell">売り候補</a></nav>'
             )
     if part == "results":
-        return f'<div class="sides">{sections}</div>'
+        return f'<div class="sides">{sections}</div>{_experiment_block(parsed, "results")}'
     inner = f'<div class="sides">{sections}</div>{_experiment_block(parsed)}'
     if fset is None:
         return f"{nav}{inner}"

@@ -77,7 +77,7 @@
 
 ## 5. 検証・確認の方法
 
-- `python -m pytest -q`(592件がすべて通る状態)。
+- `python -m pytest -q`(596件がすべて通る状態)。
 - 画面確認は Playwright(`page.clock.install` で時刻を差し替え)。
 - 過去検証は `run_backtest.py` と `data/backtest_cache.json`。分析スクリプトは作業用領域にあり、リポジトリには入れていない。
 
