@@ -73,3 +73,9 @@ def test_pnl_tab_appears_only_with_data(tmp_path):
     page = _page(tmp_path)
     assert 'data-tab="pnl">損益</button>' in page
     assert 'id="pnl-cal"' in _panel(page, "pnl")
+
+
+def test_guide_and_role_lines_explain_why_evening_and_open_sets_differ(tmp_path):
+    f = _panel(_page(tmp_path), "forecast")
+    assert "どの予想を、いつ使うか" in f and "選び方が別なので、銘柄は違います" in f
+    assert 'class="fset-role"' in f and "前日の大引けのデータで" in f  # 夜の予想の見出しに、選び方の説明

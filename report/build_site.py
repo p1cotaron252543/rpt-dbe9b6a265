@@ -510,6 +510,13 @@ _STYLE += """
 .tab-lead { margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); font-size: 0.8rem; color: var(--text-muted); line-height: 1.55; }
 .tab-lead b { color: var(--alert); }
 .no-active { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--border); background: var(--stale-bg); font-size: 0.85rem; line-height: 1.6; }
+.guide { margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); font-size: 0.82rem; }
+.guide summary { cursor: pointer; font-weight: 800; }
+.guide-list { list-style: none; margin: 8px 0 6px; padding: 0; }
+.guide-list li { display: grid; grid-template-columns: 4.6em 1fr; gap: 8px; padding: 6px 0; border-top: 1px dashed var(--border); line-height: 1.5; }
+.guide-list li span em { font-style: normal; font-weight: 800; color: var(--ink); }
+.guide-note { margin: 4px 0 0; color: var(--text-muted); line-height: 1.55; }
+.fset-role { margin: 4px 0 0; font-size: 0.76rem; color: var(--text-muted); line-height: 1.55; }
 .res-section { margin: 0 0 18px; }
 .res-intraday { margin: 0 0 12px; }
 .res-intraday-title { font-size: 0.95rem; margin: 6px 0 2px; color: var(--ink); }
@@ -1119,6 +1126,24 @@ def _glossary_block(*html_parts: str) -> str:
     )
 
 
+SLOT_ROLE = {
+    "evening": "前日の大引けのデータで、値動き・出来高・決算のスコアから選んだ候補です。翌営業日の前場（寄り付き〜11:30）に使います。",
+    "open": "当日9:25に、寄り付きで前日終値から大きくずれた（±1.5%以上）銘柄を、逆方向に狙う候補です。前場に使います。夜の予想とは選び方が別なので、銘柄は一致しません。",
+    "lunch": "当日11:50に、前場で始値から大きく動いた（±3%以上）銘柄を、逆方向に狙う候補です。後場（12:30〜）に使います。",
+}
+
+GUIDE_HTML = (
+    '<details class="guide" open><summary>どの予想を、いつ使うか</summary>'
+    '<ul class="guide-list">'
+    "<li><b>夜の予想</b><span>前日16:10に作成。<em>前場</em>（寄り付き〜11:30）に使う。スコアで選んだ上位5件。</span></li>"
+    "<li><b>寄り枠</b><span>当日9:25に作成。<em>前場</em>（9:25〜11:30）に使う。寄りで大きくずれた銘柄の逆張り（試験運用）。</span></li>"
+    "<li><b>昼の予想</b><span>当日11:50に作成。<em>後場</em>（12:30〜）に使う。前場で大きく動いた銘柄の逆張り（試験運用）。</span></li>"
+    "</ul>"
+    '<p class="guide-note">夜の予想と寄り枠は、どちらも前場向けですが、<b>選び方が別なので、銘柄は違います</b>。'
+    "どちらを使うかは、ご自身で判断してください（寄り枠は効果が未確認です）。各予想の見出しの下に、選び方を書いています。</p></details>"
+)
+
+
 def _fset_header(fs: ForecastSet, set_id: str) -> str:
     created = fmt_md_hm(fs.created_at) if fs.created_at else "不明（古い形式のため）"
     window = f"{fs.valid_from.month}/{fs.valid_from.day} {fs.valid_from:%H:%M}〜{fs.valid_until:%H:%M}"
@@ -1128,7 +1153,8 @@ def _fset_header(fs: ForecastSet, set_id: str) -> str:
         f'<div class="fset-meta"><span>作成 {html.escape(created)}</span>'
         f"<span>データ基準 {html.escape(fmt_md_hm(fs.data_as_of))}（{html.escape(fs.data_note)}）</span>"
         f"<span>使える時間 {html.escape(window)}</span></div>"
-        f'<p class="fset-note">{html.escape(fs.note)}</p></div>'
+        f'<p class="fset-note">{html.escape(fs.note)}</p>'
+        f'<p class="fset-role">{html.escape(SLOT_ROLE.get(fs.slot, ""))}</p></div>'
     )
 
 
@@ -1420,9 +1446,10 @@ def build_index(
 {tabs_nav}
 <div class="tab-panel active" data-tab="forecast" id="tab-forecast">
 <p class="tab-lead">いま使える予想だけを表示します。期限切れの予想は、自動で「結果・成績」タブに移ります。</p>
-{env_html}
+{GUIDE_HTML}
 <div id="forecast-list">{forecast_html}</div>
 <p id="no-active" class="no-active" hidden><b>いま使える予想はありません。</b>期限切れの予想と、過去の結果は「結果・成績」タブにあります。次の更新: 寄り枠 9:25ごろ・昼の予想 11:50ごろ・夜の予想 16:10ごろ（平日）。</p>
+{env_html}
 </div>
 <div class="tab-panel" data-tab="results" id="tab-results">
 <p class="tab-lead">結果・成績の画面です。<b>ここに表示される銘柄は、過去の予想です。いまの売買には使えません。</b></p>
